@@ -269,7 +269,7 @@ def fetch_health_data(client_id: int, d_start: str, d_end: str, d_prev_start: st
         SUM(CASE WHEN event_name NOT IN ('install','clicks','impressions') THEN event_count END) AS q_attr,
         SUM(client_revenue_usd)   AS revenue_usd,
         SUM(client_spend_usd)     AS spend_usd,
-        SUM(budget_usd)           AS budget_usd,
+        SUM(budget_pr_usd)        AS budget_pr_usd,
         m.ops_manager,
         m.cs_manager,
         CASE
@@ -292,9 +292,9 @@ def fetch_health_data(client_id: int, d_start: str, d_end: str, d_prev_start: st
       campaign_name,
       ops_manager,
       cs_manager,
-      SUM(spend_usd)     AS spend_usd,
-      SUM(revenue_usd)   AS revenue_usd,
-      SUM(budget_usd)    AS budget_usd,
+      SUM(spend_usd)       AS spend_usd,
+      SUM(revenue_usd)     AS revenue_usd,
+      SUM(budget_pr_usd)   AS budget_pr_usd,
       SUM(clicks)        AS clicks,
       SUM(impressions)   AS impressions,
       SUM(installs)      AS installs,
@@ -346,7 +346,7 @@ def compute_kpis(curr_df, prev_df, product, d_start, d_end):
     c_spend    = s(curr_df, "spend_usd")
     p_spend    = s(prev_df, "spend_usd")
     c_rev      = s(curr_df, "revenue_usd")
-    c_budget   = s(curr_df, "budget_usd")
+    c_budget   = s(curr_df, "budget_pr_usd")
     c_clicks   = s(curr_df, "clicks")
     p_clicks   = s(prev_df, "clicks")
     c_impr     = s(curr_df, "impressions")
@@ -436,28 +436,60 @@ def render_product_block(product, curr_df, prev_df, d_start, d_end):
         </div>"""
     stat_html += "</div>"
 
-    # Campaign table
+    # Campaign table — same columns as KPI cards
     if not curr_df.empty:
+        # Static columns per product (exclude var_ deltas — those need prev period per campaign)
+        static_kpis = [k for k in kpis if not k.startswith("var_")]
+
+        agg_cols = ["spend_usd", "budget_pr_usd", "clicks", "impressions", "installs", "q_attr", "revenue_usd"]
+        grp = curr_df.groupby("campaign_name")[[c for c in agg_cols if c in curr_df.columns]].sum().reset_index()
+
+        n_days_tbl = max((d_end - d_start).days + 1, 1)
+
+        def tbl_val(row, k):
+            sp  = row.get("spend_usd", 0)
+            bud = row.get("budget_pr_usd", 0)
+            cl  = row.get("clicks", 0)
+            ins = row.get("installs", 0)
+            imp = row.get("impressions", 0)
+            qa  = row.get("q_attr", 0)
+            rv  = row.get("revenue_usd", 0)
+            if k == "avg_daily_spend":
+                v = sp / n_days_tbl
+                return f"${v:,.0f}"
+            if k == "delivery_pct":
+                return f"{sp/bud*100:.1f}%" if bud else "—"
+            if k == "margin_pct":
+                return f"{(rv-sp)/rv*100:.1f}%" if rv else "—"
+            if k == "clicks":
+                return f"{int(cl):,}" if cl else "—"
+            if k == "installs":
+                return f"{int(ins):,}" if ins else "—"
+            if k == "q_attr":
+                return f"{int(qa):,}" if qa else "—"
+            if k == "ctatt":
+                return f"${sp/qa:,.2f}" if qa else "—"
+            if k == "fraud_pct":
+                return "—"
+            if k in ("vta_share", "cta_share"):
+                return "—"
+            return "—"
+
+        th_html = "<th>Space Campaign</th>" + "".join(
+            f"<th>{KPI_META.get(k, {}).get('label', k)}</th>" for k in static_kpis
+        )
         tbl_rows = ""
-        for _, row in curr_df.groupby("campaign_name")[["spend_usd","clicks","installs","q_attr","budget_usd"]].sum().reset_index().iterrows():
-            deliv = f"{row['spend_usd']/row['budget_usd']*100:.1f}%" if row["budget_usd"] else "—"
-            tbl_rows += f"""<tr>
-              <td>{row['campaign_name']}</td>
-              <td>${row['spend_usd']:,.0f}</td>
-              <td>{deliv}</td>
-              <td>{int(row['clicks']) if pd.notna(row['clicks']) else '—'}</td>
-              <td>{int(row['installs']) if pd.notna(row['installs']) else '—'}</td>
-              <td>{int(row['q_attr']) if pd.notna(row['q_attr']) else '—'}</td>
-            </tr>"""
+        for _, row in grp.iterrows():
+            tds = f"<td>{row['campaign_name']}</td>" + "".join(
+                f"<td>{tbl_val(row, k)}</td>" for k in static_kpis
+            )
+            tbl_rows += f"<tr>{tds}</tr>"
 
         table_html = f"""
         <div class="section-divider">By Campaign</div>
         <div style="overflow-x:auto">
         <table>
-          <thead><tr>
-            <th>Campaign</th><th>Spend USD</th><th>Delivery %</th>
-            <th>Clicks</th><th>Installs</th><th>Q Attr</th>
-          </tr></thead>
+          <thead><tr>{th_html}</tr></thead>
           <tbody>{tbl_rows}</tbody>
         </table>
         </div>"""
