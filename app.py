@@ -259,15 +259,15 @@ def fetch_health_data(client_id: int, d_start: str, d_end: str, d_prev_start: st
         m.ops_manager,
         m.cs_manager,
         CASE
-          WHEN date BETWEEN '{d_start}' AND '{d_end}'           THEN 'current'
-          WHEN date BETWEEN '{d_prev_start}' AND '{d_prev_end}' THEN 'prev'
+          WHEN date >= TIMESTAMP('{d_start}') AND date < TIMESTAMP(DATE_ADD(DATE '{d_end}',   INTERVAL 1 DAY)) THEN 'current'
+          WHEN date >= TIMESTAMP('{d_prev_start}') AND date < TIMESTAMP(DATE_ADD(DATE '{d_prev_end}', INTERVAL 1 DAY)) THEN 'prev'
         END AS period
       FROM `{BQ_PROJECT}.marts.space_events_extra_info` agg
       LEFT JOIN managers m ON m.client_id = agg.client_id
       WHERE agg.client_id = {client_id}
         AND (
-          date BETWEEN '{d_start}' AND '{d_end}'
-          OR date BETWEEN '{d_prev_start}' AND '{d_prev_end}'
+          (date >= TIMESTAMP('{d_start}')      AND date < TIMESTAMP(DATE_ADD(DATE '{d_end}',      INTERVAL 1 DAY)))
+          OR (date >= TIMESTAMP('{d_prev_start}') AND date < TIMESTAMP(DATE_ADD(DATE '{d_prev_end}', INTERVAL 1 DAY)))
         )
       GROUP BY ALL
     )
