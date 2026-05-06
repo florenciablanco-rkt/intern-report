@@ -339,7 +339,10 @@ def pct_change(curr, prev):
 
 def compute_kpis(curr_df, prev_df, product, d_start, d_end):
     def s(df, col):
-        return df[col].sum() if col in df.columns and not df.empty else 0
+        if col not in df.columns or df.empty:
+            return 0
+        val = df[col].sum()
+        return 0 if pd.isna(val) else val
 
     n_days = max((d_end - d_start).days + 1, 1)
 
@@ -355,20 +358,28 @@ def compute_kpis(curr_df, prev_df, product, d_start, d_end):
     c_qattr    = s(curr_df, "q_attr")
     p_qattr    = s(prev_df, "q_attr")
 
-    margin     = (c_rev - c_spend) / c_rev * 100 if c_rev else None
-    delivery   = c_spend / c_budget * 100         if c_budget else None
+    margin     = (c_rev - c_spend) / c_rev * 100         if c_rev and c_rev != 0 else None
+    delivery   = c_spend / c_budget * 100                 if c_budget and c_budget != 0 and not pd.isna(c_budget) else None
     avg_daily  = c_spend / n_days
 
-    cpc_curr   = c_spend / c_clicks  if c_clicks  else None
-    cpc_prev   = p_spend / p_clicks  if p_clicks  else None
-    cpi_curr   = c_spend / c_inst    if c_inst    else None
-    cpi_prev   = p_spend / p_inst    if p_inst    else None
-    cpm_curr   = c_spend / c_impr * 1000 if c_impr else None
-    cpm_prev   = p_spend / s(prev_df, "impressions") * 1000 if s(prev_df, "impressions") else None
+    def safe_div(a, b):
+        try:
+            if b and b != 0 and not pd.isna(b):
+                return a / b
+        except Exception:
+            pass
+        return None
+
+    cpc_curr   = safe_div(c_spend, c_clicks)
+    cpc_prev   = safe_div(p_spend, p_clicks)
+    cpi_curr   = safe_div(c_spend, c_inst)
+    cpi_prev   = safe_div(p_spend, p_inst)
+    cpm_curr   = safe_div(c_spend * 1000, c_impr)
+    cpm_prev   = safe_div(p_spend * 1000, s(prev_df, "impressions"))
 
     # CTatt = spend / q_attr (cost per attributed event)
-    ctatt_curr = c_spend / c_qattr if c_qattr else None
-    ctatt_prev = p_spend / p_qattr if p_qattr else None
+    ctatt_curr = safe_div(c_spend, c_qattr)
+    ctatt_prev = safe_div(p_spend, p_qattr)
 
     return {
         "avg_daily_spend": avg_daily,
