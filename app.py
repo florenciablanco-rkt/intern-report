@@ -156,34 +156,48 @@ SCOPES = [
 ]
 
 PRODUCT_CONFIG = {
-    "ASA": {
+    "Apple Ads": {
+        "label":       "ASA",
         "badge_class": "badge-asa",
-        "kpis": ["spend_usd", "margin_pct", "delivery_pct", "var_spend", "var_cpc", "var_cpi"],
+        "kpis": ["avg_daily_spend", "delivery_pct", "margin_pct",
+                 "var_spend", "var_cpc", "var_cpi"],
     },
-    "NET": {
+    "Reach Beyond": {
+        "label":       "NET",
         "badge_class": "badge-net",
-        "kpis": ["spend_usd", "margin_pct", "delivery_pct", "var_spend", "var_cpi",
-                 "clicks", "var_clicks", "q_attr", "var_q_attr", "ctatt", "var_ctatt",
+        "kpis": ["avg_daily_spend", "delivery_pct", "margin_pct",
+                 "var_spend", "var_cpi",
+                 "clicks", "var_clicks", "q_attr", "var_q_attr",
+                 "ctatt", "var_ctatt",
                  "fraud_pct", "var_fraud_pct"],
     },
-    "DSP": {
+    "Programmatic Ads": {
+        "label":       "DSP",
         "badge_class": "badge-dsp",
-        "kpis": ["spend_usd", "margin_pct", "delivery_pct", "var_spend", "var_cpm",
-                 "var_cpc", "var_cpi", "q_attr", "var_q_attr", "fraud_pct", "var_fraud_pct",
+        "kpis": ["avg_daily_spend", "delivery_pct", "margin_pct",
+                 "var_spend", "var_cpm", "var_cpc", "var_cpi",
+                 "q_attr", "var_q_attr",
+                 "fraud_pct", "var_fraud_pct",
                  "vta_share", "cta_share"],
     },
     "PAI": {
+        "label":       "PAI",
         "badge_class": "badge-pai",
-        "kpis": ["spend_usd", "margin_pct", "delivery_pct", "var_spend", "installs", "var_installs"],
+        "kpis": ["avg_daily_spend", "delivery_pct", "margin_pct",
+                 "var_spend", "installs", "var_installs"],
     },
-    "OEM Disp": {
+    "First Impact Ads": {
+        "label":       "OEM Disp",
         "badge_class": "badge-oemd",
-        "kpis": ["spend_usd", "margin_pct", "delivery_pct", "var_spend", "var_cpc",
-                 "var_cpi", "q_attr", "var_q_attr", "fraud_pct", "var_fraud_pct"],
+        "kpis": ["avg_daily_spend", "delivery_pct", "margin_pct",
+                 "var_spend", "var_cpc", "var_cpi",
+                 "q_attr", "var_q_attr",
+                 "fraud_pct", "var_fraud_pct"],
     },
 }
 
 KPI_META = {
+    "avg_daily_spend": {"label": "Avg Daily Spend",   "color": "purple", "fmt": "currency"},
     "spend_usd":       {"label": "Spend USD",         "color": "purple", "fmt": "currency"},
     "margin_pct":      {"label": "Margin %",           "color": "green",  "fmt": "pct"},
     "delivery_pct":    {"label": "Delivery %",         "color": "blue",   "fmt": "pct"},
@@ -195,7 +209,7 @@ KPI_META = {
     "var_clicks":      {"label": "Δ Clicks vs prev",   "color": "gray",   "fmt": "pct_delta"},
     "q_attr":          {"label": "Q Attr",             "color": "blue",   "fmt": "number"},
     "var_q_attr":      {"label": "Δ Q Attr vs prev",   "color": "gray",   "fmt": "pct_delta"},
-    "ctatt":           {"label": "CTAtt",              "color": "blue",   "fmt": "number"},
+    "ctatt":           {"label": "CTAtt ($/attr)",    "color": "blue",   "fmt": "currency"},
     "var_ctatt":       {"label": "Δ CTAtt vs prev",    "color": "gray",   "fmt": "pct_delta"},
     "fraud_pct":       {"label": "% Fraude",           "color": "amber",  "fmt": "pct"},
     "var_fraud_pct":   {"label": "Δ % Fraude vs prev", "color": "gray",   "fmt": "pct_delta"},
@@ -323,9 +337,11 @@ def pct_change(curr, prev):
         return (curr - prev) / abs(prev) * 100
     return None
 
-def compute_kpis(curr_df, prev_df, product):
+def compute_kpis(curr_df, prev_df, product, d_start, d_end):
     def s(df, col):
         return df[col].sum() if col in df.columns and not df.empty else 0
+
+    n_days = max((d_end - d_start).days + 1, 1)
 
     c_spend    = s(curr_df, "spend_usd")
     p_spend    = s(prev_df, "spend_usd")
@@ -340,52 +356,56 @@ def compute_kpis(curr_df, prev_df, product):
     p_qattr    = s(prev_df, "q_attr")
 
     margin     = (c_rev - c_spend) / c_rev * 100 if c_rev else None
-    delivery   = c_spend / c_budget * 100 if c_budget else None
+    delivery   = c_spend / c_budget * 100         if c_budget else None
+    avg_daily  = c_spend / n_days
+
     cpc_curr   = c_spend / c_clicks  if c_clicks  else None
     cpc_prev   = p_spend / p_clicks  if p_clicks  else None
     cpi_curr   = c_spend / c_inst    if c_inst    else None
     cpi_prev   = p_spend / p_inst    if p_inst    else None
     cpm_curr   = c_spend / c_impr * 1000 if c_impr else None
-    cpm_prev   = s(prev_df, "spend_usd") / s(prev_df, "impressions") * 1000 if s(prev_df, "impressions") else None
-    ctatt_curr = c_qattr / c_clicks  if c_clicks  else None
-    ctatt_prev = p_qattr / p_clicks  if p_clicks  else None
-    vta        = None  # placeholder
-    cta        = None  # placeholder
+    cpm_prev   = p_spend / s(prev_df, "impressions") * 1000 if s(prev_df, "impressions") else None
+
+    # CTatt = spend / q_attr (cost per attributed event)
+    ctatt_curr = c_spend / c_qattr if c_qattr else None
+    ctatt_prev = p_spend / p_qattr if p_qattr else None
 
     return {
-        "spend_usd":     c_spend,
-        "margin_pct":    margin,
-        "delivery_pct":  delivery,
-        "var_spend":     pct_change(c_spend, p_spend),
-        "var_cpc":       pct_change(cpc_curr, cpc_prev),
-        "var_cpi":       pct_change(cpi_curr, cpi_prev),
-        "var_cpm":       pct_change(cpm_curr, cpm_prev),
-        "clicks":        c_clicks,
-        "var_clicks":    pct_change(c_clicks, p_clicks),
-        "q_attr":        c_qattr,
-        "var_q_attr":    pct_change(c_qattr, p_qattr),
-        "ctatt":         ctatt_curr * 100 if ctatt_curr else None,
-        "var_ctatt":     pct_change(ctatt_curr, ctatt_prev),
-        "fraud_pct":     None,
-        "var_fraud_pct": None,
-        "installs":      c_inst,
-        "var_installs":  pct_change(c_inst, p_inst),
-        "vta_share":     vta,
-        "cta_share":     cta,
+        "avg_daily_spend": avg_daily,
+        "spend_usd":       c_spend,
+        "margin_pct":      margin,
+        "delivery_pct":    delivery,
+        "var_spend":       pct_change(c_spend, p_spend),
+        "var_cpc":         pct_change(cpc_curr, cpc_prev),
+        "var_cpi":         pct_change(cpi_curr, cpi_prev),
+        "var_cpm":         pct_change(cpm_curr, cpm_prev),
+        "clicks":          c_clicks,
+        "var_clicks":      pct_change(c_clicks, p_clicks),
+        "q_attr":          c_qattr,
+        "var_q_attr":      pct_change(c_qattr, p_qattr),
+        "ctatt":           ctatt_curr,
+        "var_ctatt":       pct_change(ctatt_curr, ctatt_prev),
+        "fraud_pct":       None,
+        "var_fraud_pct":   None,
+        "installs":        c_inst,
+        "var_installs":    pct_change(c_inst, p_inst),
+        "vta_share":       None,
+        "cta_share":       None,
     }
 
-def render_product_block(product, curr_df, prev_df):
+def render_product_block(product, curr_df, prev_df, d_start, d_end):
     cfg    = PRODUCT_CONFIG.get(product, {})
+    label  = cfg.get("label", product)
     badge  = cfg.get("badge_class", "badge-asa")
     kpis   = cfg.get("kpis", [])
-    values = compute_kpis(curr_df, prev_df, product)
+    values = compute_kpis(curr_df, prev_df, product, d_start, d_end)
 
     n_campaigns = curr_df["campaign_name"].nunique() if not curr_df.empty else 0
 
     header_html = f"""
     <div class="card-header">
       <div style="display:flex;align-items:center;gap:10px">
-        <span class="product-badge {badge}">{product}</span>
+        <span class="product-badge {badge}">{label}</span>
         <span style="font-size:12px;color:#6b6887">{n_campaigns} campaign{'s' if n_campaigns != 1 else ''}</span>
       </div>
     </div>
@@ -610,4 +630,4 @@ if not ordered_products:
 for product in ordered_products:
     curr_p = curr[curr["product"] == product]
     prev_p = prev[prev["product"] == product]
-    render_product_block(product, curr_p, prev_p)
+    render_product_block(product, curr_p, prev_p, d_start, d_end)
