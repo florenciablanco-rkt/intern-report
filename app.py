@@ -458,21 +458,31 @@ def render_product_block(product, curr_df, prev_df, d_start, d_end):
 
         n_days_tbl = max((d_end - d_start).days + 1, 1)
 
+        def safe_tbl_div(a, b):
+            try:
+                b_val = float(b)
+                if b_val != 0 and not __import__("math").isnan(b_val):
+                    return float(a) / b_val
+            except Exception:
+                pass
+            return None
+
         def tbl_val(row, k):
-            sp  = row.get("spend_usd", 0)
-            bud = row.get("budget_pr_usd", 0)
-            cl  = row.get("clicks", 0)
-            ins = row.get("installs", 0)
-            imp = row.get("impressions", 0)
-            qa  = row.get("q_attr", 0)
-            rv  = row.get("revenue_usd", 0)
+            sp  = float(row.get("spend_usd") or 0)
+            bud = float(row.get("budget_pr_usd") or 0)
+            cl  = float(row.get("clicks") or 0)
+            ins = float(row.get("installs") or 0)
+            qa  = float(row.get("q_attr") or 0)
+            rv  = float(row.get("revenue_usd") or 0)
             if k == "avg_daily_spend":
                 v = sp / n_days_tbl
                 return f"${v:,.0f}"
             if k == "delivery_pct":
-                return f"{sp/bud*100:.1f}%" if bud else "—"
+                v = safe_tbl_div(sp * 100, bud)
+                return f"{v:.1f}%" if v is not None else "—"
             if k == "margin_pct":
-                return f"{(rv-sp)/rv*100:.1f}%" if rv else "—"
+                v = safe_tbl_div((rv - sp) * 100, rv)
+                return f"{v:.1f}%" if v is not None else "—"
             if k == "clicks":
                 return f"{int(cl):,}" if cl else "—"
             if k == "installs":
@@ -480,7 +490,8 @@ def render_product_block(product, curr_df, prev_df, d_start, d_end):
             if k == "q_attr":
                 return f"{int(qa):,}" if qa else "—"
             if k == "ctatt":
-                return f"${sp/qa:,.2f}" if qa else "—"
+                v = safe_tbl_div(sp, qa)
+                return f"${v:,.2f}" if v is not None else "—"
             if k == "fraud_pct":
                 return "—"
             if k in ("vta_share", "cta_share"):
