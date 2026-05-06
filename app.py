@@ -358,17 +358,18 @@ def compute_kpis(curr_df, prev_df, product, d_start, d_end):
     c_qattr    = s(curr_df, "q_attr")
     p_qattr    = s(prev_df, "q_attr")
 
-    margin     = (c_rev - c_spend) / c_rev * 100         if c_rev and c_rev != 0 else None
-    delivery   = c_spend / c_budget * 100                 if c_budget and c_budget != 0 and not pd.isna(c_budget) else None
-    avg_daily  = c_spend / n_days
-
     def safe_div(a, b):
         try:
-            if b and b != 0 and not pd.isna(b):
-                return a / b
+            b_val = float(b)
+            if b_val != 0 and not pd.isna(b_val):
+                return float(a) / b_val
         except Exception:
             pass
         return None
+
+    margin     = safe_div((c_rev - c_spend) * 100, c_rev)
+    delivery   = safe_div(c_spend * 100, c_budget)
+    avg_daily  = c_spend / n_days
 
     cpc_curr   = safe_div(c_spend, c_clicks)
     cpc_prev   = safe_div(p_spend, p_clicks)
