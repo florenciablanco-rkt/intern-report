@@ -448,6 +448,17 @@ def render_product_block(product, curr_df, prev_df, d_start, d_end):
         </div>"""
     stat_html += "</div>"
 
+    # Margin disclaimer if revenue data is unavailable
+    margin_disclaimer = ""
+    if values.get("margin_pct") is None:
+        margin_disclaimer = """
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:14px;
+                    padding:8px 12px;background:#fffbeb;border:1px solid #fde68a;
+                    border-radius:6px;font-size:11px;color:#92400e;">
+          <span>⚠</span>
+          <span><strong>Margin %</strong> is unavailable for this client — it requires revenue data that is not currently reported.</span>
+        </div>"""
+
     # Campaign table — all KPI columns including var_ deltas per campaign
     if not curr_df.empty:
         agg_cols = ["spend_usd", "budget_pr_usd", "clicks", "impressions", "installs", "q_attr", "revenue_usd"]
@@ -553,7 +564,7 @@ def render_product_block(product, curr_df, prev_df, d_start, d_end):
     else:
         table_html = ""
 
-    st.markdown(f'<div class="card">{header_html}{stat_html}{table_html}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="card">{header_html}{stat_html}{margin_disclaimer}{table_html}</div>', unsafe_allow_html=True)
 
 # ── Period helpers ─────────────────────────────────────────────────────────────
 def get_preset_range(preset: str):
@@ -582,92 +593,112 @@ def get_prev_range(start: date, end: date):
     prev_start = prev_end - timedelta(days=delta - 1)
     return prev_start, prev_end
 
-# ── Sidebar ────────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("""
-    <div style="padding:4px 0 16px;border-bottom:1px solid rgba(255,255,255,0.06);margin-bottom:16px">
-      <div style="display:flex;align-items:center;gap:8px">
-        <div style="width:26px;height:26px;background:#7c3aed;border-radius:5px;
-                    display:flex;align-items:center;justify-content:center;
-                    font-size:11px;font-weight:600;color:#fff">RL</div>
-        <div>
-          <div style="font-size:12px;font-weight:600;color:#fff !important">Rocket Lab</div>
-          <div style="font-size:10px;color:#5a5878 !important">Space: Health Check</div>
-        </div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+# ── Main ─────────────────────────────────────────────────────────────────────
 
-    # Client
-    st.markdown("### Client")
-    clients_df = pd.DataFrame()
-    try:
-        with st.spinner(""):
-            clients_df = fetch_clients()
-    except Exception as e:
-        st.error(f"BQ error: {e}")
+# Top header
+st.markdown("""
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+  <div style="width:30px;height:30px;background:#7c3aed;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">RL</div>
+  <div>
+    <div style="font-size:18px;font-weight:700;letter-spacing:-0.4px;color:#1a1927;line-height:1.2">Space: Health Check</div>
+    <div style="font-size:11px;color:#9997b3">Client performance overview</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
+# Load clients
+clients_df = pd.DataFrame()
+try:
+    with st.spinner("Loading..."):
+        clients_df = fetch_clients()
+except Exception as e:
+    st.error(f"BQ error: {e}")
+
+cs_managers  = ["All"] + sorted(clients_df["cs_manager"].dropna().unique().tolist())  if not clients_df.empty and "cs_manager"  in clients_df.columns else ["All"]
+ops_managers = ["All"] + sorted(clients_df["ops_manager"].dropna().unique().tolist()) if not clients_df.empty and "ops_manager" in clients_df.columns else ["All"]
+
+# ── Filter bar
+st.markdown('<div style="background:#fff;border:1px solid #e4e2ee;border-radius:10px;padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">', unsafe_allow_html=True)
+
+f1, f2, f3, f4, f5, f6 = st.columns([2, 1.4, 1.4, 1.2, 1.4, 0.7])
+
+with f1:
+    st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#9997b3;margin:0 0 4px">Client</p>', unsafe_allow_html=True)
     client_options = {"— select —": None}
     if not clients_df.empty:
         client_options.update({r["client_name"]: r["client_id"] for _, r in clients_df.iterrows()})
-
-    selected_name = st.selectbox("Client", options=list(client_options.keys()), label_visibility="collapsed")
+    selected_name = st.selectbox("Client", options=list(client_options.keys()), label_visibility="collapsed", key="sel_client")
     selected_id   = client_options[selected_name]
 
-    st.markdown("<hr style='border-color:rgba(255,255,255,0.06);margin:14px 0'>", unsafe_allow_html=True)
+with f2:
+    st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#9997b3;margin:0 0 4px">CS Manager</p>', unsafe_allow_html=True)
+    selected_cs = st.selectbox("CS Manager", options=cs_managers, label_visibility="collapsed", key="sel_cs")
 
-    # Time frame
-    st.markdown("### Time frame")
-    preset = st.radio(
-        "preset",
-        ["This month", "Last month", "Last 7 days", "Last 30 days", "Custom"],
-        label_visibility="collapsed",
-    )
+with f3:
+    st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#9997b3;margin:0 0 4px">Ops Manager</p>', unsafe_allow_html=True)
+    selected_ops = st.selectbox("Ops Manager", options=ops_managers, label_visibility="collapsed", key="sel_ops")
 
+with f4:
+    st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#9997b3;margin:0 0 4px">Time Frame</p>', unsafe_allow_html=True)
+    preset = st.selectbox("Time Frame", ["This month", "Last month", "Last 7 days", "Last 30 days", "Custom"], label_visibility="collapsed", key="sel_preset")
+
+with f5:
     if preset == "Custom":
-        d_start = st.date_input("From", value=date.today().replace(day=1))
-        d_end   = st.date_input("To",   value=date.today())
+        st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#9997b3;margin:0 0 4px">From / To</p>', unsafe_allow_html=True)
+        c_from, c_to = st.columns(2)
+        with c_from:
+            d_start = st.date_input("From", value=date.today().replace(day=1), label_visibility="collapsed", key="d_from")
+        with c_to:
+            d_end = st.date_input("To", value=date.today(), label_visibility="collapsed", key="d_to")
     else:
         d_start, d_end = get_preset_range(preset)
-        st.caption(f"{d_start.strftime('%b %d')} → {d_end.strftime('%b %d, %Y')}")
+        d_prev_start, d_prev_end = get_prev_range(d_start, d_end)
+        st.markdown(f'<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#9997b3;margin:0 0 4px">Period</p><p style="font-size:12px;font-weight:500;color:#1a1927;margin:0">{d_start.strftime("%b %d")} – {d_end.strftime("%b %d, %Y")}</p><p style="font-size:10px;color:#9997b3;margin:2px 0 0">vs {d_prev_start.strftime("%b %d")} – {d_prev_end.strftime("%b %d")}</p>', unsafe_allow_html=True)
 
-    d_prev_start, d_prev_end = get_prev_range(d_start, d_end)
-    st.caption(f"vs {d_prev_start.strftime('%b %d')} → {d_prev_end.strftime('%b %d, %Y')}")
+with f6:
+    st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:transparent;margin:0 0 4px">.</p>', unsafe_allow_html=True)
+    run = st.button("Run", type="primary", use_container_width=True)
 
-    st.markdown("<hr style='border-color:rgba(255,255,255,0.06);margin:14px 0'>", unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
-    run = st.button("Run", use_container_width=True)
+d_prev_start, d_prev_end = get_prev_range(d_start, d_end)
 
-# ── Main ───────────────────────────────────────────────────────────────────────
-st.title("Space: Health Check")
-st.caption(f"Client performance overview · {d_start.strftime('%b %d')} – {d_end.strftime('%b %d, %Y')} vs prior period")
-
-if selected_id is None:
+# ── Validation
+if selected_id is None and selected_cs == "All" and selected_ops == "All":
     st.markdown("""
-    <div style="background:#fff;border:1px solid #e4e2ee;border-radius:8px;
-                padding:40px;text-align:center;margin-top:20px">
+    <div style="background:#fff;border:1px solid #e4e2ee;border-radius:8px;padding:40px;text-align:center;margin-top:8px">
       <div style="font-size:28px;margin-bottom:8px">📊</div>
-      <div style="font-size:14px;font-weight:600;color:#1a1927">Select a client to start</div>
-      <div style="font-size:12px;color:#9997b3;margin-top:4px">
-        Choose a client from the sidebar and click Run.
-      </div>
+      <div style="font-size:14px;font-weight:600;color:#1a1927">Select a client or manager to start</div>
+      <div style="font-size:12px;color:#9997b3;margin-top:4px">Use the filters above and click Run.</div>
     </div>
     """, unsafe_allow_html=True)
     st.stop()
 
 if not run and "last_df" not in st.session_state:
-    st.info("Select filters and click **Run** to load data.")
+    st.markdown('<div style="background:#fff;border:1px solid #e4e2ee;border-radius:8px;padding:32px;text-align:center;margin-top:8px"><p style="font-size:12px;color:#9997b3;margin:0">Set your filters above and click <strong>Run</strong> to load data.</p></div>', unsafe_allow_html=True)
     st.stop()
 
 if run:
+    client_ids_to_query = []
+    if selected_id is not None:
+        client_ids_to_query = [selected_id]
+    else:
+        filtered = clients_df.copy()
+        if selected_cs != "All":
+            filtered = filtered[filtered["cs_manager"] == selected_cs]
+        if selected_ops != "All":
+            filtered = filtered[filtered["ops_manager"] == selected_ops]
+        client_ids_to_query = filtered["client_id"].tolist()
+
+    if not client_ids_to_query:
+        st.warning("No clients match the selected filters.")
+        st.stop()
+
     with st.spinner("Querying BigQuery..."):
         try:
-            df = fetch_health_data(
-                selected_id,
-                str(d_start), str(d_end),
-                str(d_prev_start), str(d_prev_end),
-            )
-            st.session_state["last_df"]   = df
+            frames = [fetch_health_data(cid, str(d_start), str(d_end), str(d_prev_start), str(d_prev_end)) for cid in client_ids_to_query]
+            df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+            st.session_state["last_df"]    = df
             st.session_state["last_range"] = (d_start, d_end, d_prev_start, d_prev_end)
         except Exception as e:
             st.error(f"Query error: {e}")
@@ -678,38 +709,42 @@ curr = df[df["period"] == "current"]
 prev = df[df["period"] == "prev"]
 
 if curr.empty:
-    st.warning("No data found for this client in the selected period.")
+    st.warning("No data found for the selected filters and period.")
     st.stop()
 
-# ── Manager info strip ─────────────────────────────────────────────────────────
-ops = curr["ops_manager"].dropna().iloc[0] if not curr["ops_manager"].dropna().empty else "—"
-cs  = curr["cs_manager"].dropna().iloc[0]  if not curr["cs_manager"].dropna().empty  else "—"
+# ── Info strip
+client_name_display = selected_name if selected_id else (f"CS: {selected_cs}" if selected_cs != "All" else f"Ops: {selected_ops}")
+ops_display = curr["ops_manager"].dropna().iloc[0] if not curr["ops_manager"].dropna().empty else "—"
+cs_display  = curr["cs_manager"].dropna().iloc[0]  if not curr["cs_manager"].dropna().empty  else "—"
 
 st.markdown(f"""
-<div style="display:flex;gap:10px;margin-bottom:18px">
-  <div style="background:#fff;border:1px solid #e4e2ee;border-radius:6px;padding:8px 14px;font-size:12px">
-    <span style="color:#9997b3;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px">Ops Manager</span><br>
-    <span style="font-weight:500">{ops}</span>
+<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+  <div style="background:#fff;border:1px solid #e4e2ee;border-radius:6px;padding:8px 14px">
+    <div style="color:#9997b3;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px">Client</div>
+    <div style="font-weight:600;color:#1a1927;font-size:12px;margin-top:2px">{client_name_display}</div>
   </div>
-  <div style="background:#fff;border:1px solid #e4e2ee;border-radius:6px;padding:8px 14px;font-size:12px">
-    <span style="color:#9997b3;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px">CS Manager</span><br>
-    <span style="font-weight:500">{cs}</span>
+  <div style="background:#fff;border:1px solid #e4e2ee;border-radius:6px;padding:8px 14px">
+    <div style="color:#9997b3;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px">Ops Manager</div>
+    <div style="font-weight:500;color:#1a1927;font-size:12px;margin-top:2px">{ops_display}</div>
   </div>
-  <div style="background:#fff;border:1px solid #e4e2ee;border-radius:6px;padding:8px 14px;font-size:12px">
-    <span style="color:#9997b3;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px">Period</span><br>
-    <span style="font-weight:500">{d_start.strftime('%b %d')} – {d_end.strftime('%b %d, %Y')}</span>
+  <div style="background:#fff;border:1px solid #e4e2ee;border-radius:6px;padding:8px 14px">
+    <div style="color:#9997b3;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px">CS Manager</div>
+    <div style="font-weight:500;color:#1a1927;font-size:12px;margin-top:2px">{cs_display}</div>
   </div>
-  <div style="background:#fff;border:1px solid #e4e2ee;border-radius:6px;padding:8px 14px;font-size:12px">
-    <span style="color:#9997b3;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px">Compare to</span><br>
-    <span style="font-weight:500">{d_prev_start.strftime('%b %d')} – {d_prev_end.strftime('%b %d, %Y')}</span>
+  <div style="background:#fff;border:1px solid #e4e2ee;border-radius:6px;padding:8px 14px">
+    <div style="color:#9997b3;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px">Period</div>
+    <div style="font-weight:500;color:#1a1927;font-size:12px;margin-top:2px">{d_start.strftime("%b %d")} – {d_end.strftime("%b %d, %Y")}</div>
+  </div>
+  <div style="background:#fff;border:1px solid #e4e2ee;border-radius:6px;padding:8px 14px">
+    <div style="color:#9997b3;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px">Compare to</div>
+    <div style="font-weight:500;color:#1a1927;font-size:12px;margin-top:2px">{d_prev_start.strftime("%b %d")} – {d_prev_end.strftime("%b %d, %Y")}</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
-# ── Products ───────────────────────────────────────────────────────────────────
+# ── Products
 products_in_data = curr["product"].dropna().unique().tolist()
 ordered_products = [p for p in PRODUCT_CONFIG if p in products_in_data]
-# Include any product in data not in our config
 ordered_products += [p for p in products_in_data if p not in PRODUCT_CONFIG]
 
 if not ordered_products:
