@@ -448,13 +448,12 @@ def render_product_block(product, curr_df, prev_df, d_start, d_end):
         </div>"""
     stat_html += "</div>"
 
-    # Campaign table — same columns as KPI cards
+    # Campaign table — all KPI columns including var_ deltas per campaign
     if not curr_df.empty:
-        # Static columns per product (exclude var_ deltas — those need prev period per campaign)
-        static_kpis = [k for k in kpis if not k.startswith("var_")]
-
         agg_cols = ["spend_usd", "budget_pr_usd", "clicks", "impressions", "installs", "q_attr", "revenue_usd"]
-        grp = curr_df.groupby("campaign_name")[[c for c in agg_cols if c in curr_df.columns]].sum().reset_index()
+        grp_curr = curr_df.groupby("campaign_name")[[c for c in agg_cols if c in curr_df.columns]].sum().reset_index()
+        grp_prev = prev_df.groupby("campaign_name")[[c for c in agg_cols if c in prev_df.columns]].sum().reset_index() if not prev_df.empty else pd.DataFrame(columns=["campaign_name"] + agg_cols)
+        grp = grp_curr.merge(grp_prev, on="campaign_name", how="left", suffixes=("", "_prev"))
 
         n_days_tbl = max((d_end - d_start).days + 1, 1)
 
@@ -467,16 +466,38 @@ def render_product_block(product, curr_df, prev_df, d_start, d_end):
                 pass
             return None
 
+        def pct_chg(curr_val, prev_val):
+            v = safe_tbl_div((float(curr_val or 0) - float(prev_val or 0)) * 100, float(prev_val or 0))
+            if v is None:
+                return "—"
+            sign = "+" if v > 0 else ""
+            return f"{sign}{v:.1f}%"
+
         def tbl_val(row, k):
-            sp  = float(row.get("spend_usd") or 0)
-            bud = float(row.get("budget_pr_usd") or 0)
-            cl  = float(row.get("clicks") or 0)
-            ins = float(row.get("installs") or 0)
-            qa  = float(row.get("q_attr") or 0)
-            rv  = float(row.get("revenue_usd") or 0)
+            sp   = float(row.get("spend_usd") or 0)
+            bud  = float(row.get("budget_pr_usd") or 0)
+            cl   = float(row.get("clicks") or 0)
+            ins  = float(row.get("installs") or 0)
+            qa   = float(row.get("q_attr") or 0)
+            rv   = float(row.get("revenue_usd") or 0)
+            sp_p = float(row.get("spend_usd_prev") or 0)
+            cl_p = float(row.get("clicks_prev") or 0)
+            ins_p= float(row.get("installs_prev") or 0)
+            qa_p = float(row.get("q_attr_prev") or 0)
+            imp  = float(row.get("impressions") or 0)
+            imp_p= float(row.get("impressions_prev") or 0)
+
+            cpc      = safe_tbl_div(sp,   cl)
+            cpc_p    = safe_tbl_div(sp_p, cl_p)
+            cpi      = safe_tbl_div(sp,   ins)
+            cpi_p    = safe_tbl_div(sp_p, ins_p)
+            cpm      = safe_tbl_div(sp * 1000,   imp)
+            cpm_p    = safe_tbl_div(sp_p * 1000, imp_p)
+            ctatt    = safe_tbl_div(sp,   qa)
+            ctatt_p  = safe_tbl_div(sp_p, qa_p)
+
             if k == "avg_daily_spend":
-                v = sp / n_days_tbl
-                return f"${v:,.0f}"
+                return f"${sp/n_days_tbl:,.0f}"
             if k == "delivery_pct":
                 v = safe_tbl_div(sp * 100, bud)
                 return f"{v:.1f}%" if v is not None else "—"
@@ -490,21 +511,34 @@ def render_product_block(product, curr_df, prev_df, d_start, d_end):
             if k == "q_attr":
                 return f"{int(qa):,}" if qa else "—"
             if k == "ctatt":
-                v = safe_tbl_div(sp, qa)
-                return f"${v:,.2f}" if v is not None else "—"
-            if k == "fraud_pct":
-                return "—"
-            if k in ("vta_share", "cta_share"):
+                return f"${ctatt:,.2f}" if ctatt is not None else "—"
+            if k == "var_spend":
+                return pct_chg(sp, sp_p)
+            if k == "var_clicks":
+                return pct_chg(cl, cl_p)
+            if k == "var_installs":
+                return pct_chg(ins, ins_p)
+            if k == "var_q_attr":
+                return pct_chg(qa, qa_p)
+            if k == "var_cpc":
+                return pct_chg(cpc, cpc_p)
+            if k == "var_cpi":
+                return pct_chg(cpi, cpi_p)
+            if k == "var_cpm":
+                return pct_chg(cpm, cpm_p)
+            if k == "var_ctatt":
+                return pct_chg(ctatt, ctatt_p)
+            if k in ("fraud_pct", "var_fraud_pct", "vta_share", "cta_share"):
                 return "—"
             return "—"
 
         th_html = "<th>Space Campaign</th>" + "".join(
-            f"<th>{KPI_META.get(k, {}).get('label', k)}</th>" for k in static_kpis
+            f"<th>{KPI_META.get(k, {}).get('label', k)}</th>" for k in kpis
         )
         tbl_rows = ""
         for _, row in grp.iterrows():
             tds = f"<td>{row['campaign_name']}</td>" + "".join(
-                f"<td>{tbl_val(row, k)}</td>" for k in static_kpis
+                f"<td>{tbl_val(row, k)}</td>" for k in kpis
             )
             tbl_rows += f"<tr>{tds}</tr>"
 
