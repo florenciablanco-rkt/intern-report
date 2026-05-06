@@ -221,7 +221,7 @@ def fetch_clients():
     q = f"""
         SELECT DISTINCT client_id, client_name
         FROM `{BQ_PROJECT}.marts.space_events_extra_info`
-        WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
+        WHERE date >= TIMESTAMP(DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY))
           AND client_name IS NOT NULL
         ORDER BY client_name
     """
