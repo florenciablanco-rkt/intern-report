@@ -614,37 +614,56 @@ try:
 except Exception as e:
     st.error(f"BQ error: {e}")
 
-cs_managers  = ["All"] + sorted(clients_df["cs_manager"].dropna().unique().tolist())  if not clients_df.empty and "cs_manager"  in clients_df.columns else ["All"]
-ops_managers = ["All"] + sorted(clients_df["ops_manager"].dropna().unique().tolist()) if not clients_df.empty and "ops_manager" in clients_df.columns else ["All"]
+# Build client options
+client_options = {"— select —": None}
+if not clients_df.empty:
+    client_options.update({r["client_name"]: r["client_id"] for _, r in clients_df.iterrows()})
 
-# ── Filter bar
-st.markdown('<div style="background:#fff;border:1px solid #e4e2ee;border-radius:10px;padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">', unsafe_allow_html=True)
+# ── Filter bar (dark background)
+st.markdown('''<style>
+div[data-testid="stHorizontalBlock"] > div > div > div > div[data-baseweb="select"] > div {
+    background-color: #1e1d28 !important;
+    border-color: #252336 !important;
+    color: #fff !important;
+}
+div[data-testid="stHorizontalBlock"] > div > div > div > div[data-baseweb="select"] span {
+    color: #fff !important;
+}
+</style>''', unsafe_allow_html=True)
+
+st.markdown('<div style="background:#14131a;border-radius:10px;padding:16px 20px;margin-bottom:20px">', unsafe_allow_html=True)
 
 f1, f2, f3, f4, f5, f6 = st.columns([2, 1.4, 1.4, 1.2, 1.4, 0.7])
 
 with f1:
-    st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#9997b3;margin:0 0 4px">Client</p>', unsafe_allow_html=True)
-    client_options = {"— select —": None}
-    if not clients_df.empty:
-        client_options.update({r["client_name"]: r["client_id"] for _, r in clients_df.iterrows()})
+    st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#5a5878;margin:0 0 4px">Client</p>', unsafe_allow_html=True)
     selected_name = st.selectbox("Client", options=list(client_options.keys()), label_visibility="collapsed", key="sel_client")
     selected_id   = client_options[selected_name]
 
+# If client selected, filter managers to that client only
+if selected_id is not None and not clients_df.empty:
+    client_row    = clients_df[clients_df["client_id"] == selected_id]
+    cs_managers   = ["All"] + [v for v in client_row["cs_manager"].dropna().unique().tolist() if v]
+    ops_managers  = ["All"] + [v for v in client_row["ops_manager"].dropna().unique().tolist() if v]
+else:
+    cs_managers  = ["All"] + sorted(clients_df["cs_manager"].dropna().unique().tolist())  if not clients_df.empty and "cs_manager"  in clients_df.columns else ["All"]
+    ops_managers = ["All"] + sorted(clients_df["ops_manager"].dropna().unique().tolist()) if not clients_df.empty and "ops_manager" in clients_df.columns else ["All"]
+
 with f2:
-    st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#9997b3;margin:0 0 4px">CS Manager</p>', unsafe_allow_html=True)
+    st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#5a5878;margin:0 0 4px">CS Manager</p>', unsafe_allow_html=True)
     selected_cs = st.selectbox("CS Manager", options=cs_managers, label_visibility="collapsed", key="sel_cs")
 
 with f3:
-    st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#9997b3;margin:0 0 4px">Ops Manager</p>', unsafe_allow_html=True)
+    st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#5a5878;margin:0 0 4px">Ops Manager</p>', unsafe_allow_html=True)
     selected_ops = st.selectbox("Ops Manager", options=ops_managers, label_visibility="collapsed", key="sel_ops")
 
 with f4:
-    st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#9997b3;margin:0 0 4px">Time Frame</p>', unsafe_allow_html=True)
+    st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#5a5878;margin:0 0 4px">Time Frame</p>', unsafe_allow_html=True)
     preset = st.selectbox("Time Frame", ["This month", "Last month", "Last 7 days", "Last 30 days", "Custom"], label_visibility="collapsed", key="sel_preset")
 
 with f5:
     if preset == "Custom":
-        st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#9997b3;margin:0 0 4px">From / To</p>', unsafe_allow_html=True)
+        st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#5a5878;margin:0 0 4px">From / To</p>', unsafe_allow_html=True)
         c_from, c_to = st.columns(2)
         with c_from:
             d_start = st.date_input("From", value=date.today().replace(day=1), label_visibility="collapsed", key="d_from")
@@ -653,10 +672,10 @@ with f5:
     else:
         d_start, d_end = get_preset_range(preset)
         d_prev_start, d_prev_end = get_prev_range(d_start, d_end)
-        st.markdown(f'<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#9997b3;margin:0 0 4px">Period</p><p style="font-size:12px;font-weight:500;color:#1a1927;margin:0">{d_start.strftime("%b %d")} – {d_end.strftime("%b %d, %Y")}</p><p style="font-size:10px;color:#9997b3;margin:2px 0 0">vs {d_prev_start.strftime("%b %d")} – {d_prev_end.strftime("%b %d")}</p>', unsafe_allow_html=True)
+        st.markdown(f'<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:#5a5878;margin:0 0 4px">Period</p><p style="font-size:12px;font-weight:500;color:#fff;margin:0">{d_start.strftime("%b %d")} – {d_end.strftime("%b %d, %Y")}</p><p style="font-size:10px;color:#5a5878;margin:2px 0 0">vs {d_prev_start.strftime("%b %d")} – {d_prev_end.strftime("%b %d")}</p>', unsafe_allow_html=True)
 
 with f6:
-    st.markdown('<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:transparent;margin:0 0 4px">.</p>', unsafe_allow_html=True)
+    st.markdown('<p style="font-size:10px;margin:0 0 4px">&nbsp;</p>', unsafe_allow_html=True)
     run = st.button("Run", type="primary", use_container_width=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
