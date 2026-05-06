@@ -1,0 +1,613 @@
+"""
+app.py — Space: Health Check Dashboard · Rocket Lab Space style
+"""
+
+import streamlit as st
+import pandas as pd
+from google.cloud import bigquery
+from google.oauth2.service_account import Credentials
+from datetime import date, timedelta
+import calendar
+
+st.set_page_config(
+    page_title="Space: Health Check · Rocket Lab",
+    page_icon="🚀",
+    layout="wide",
+)
+
+# ── CSS ────────────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif !important;
+    background-color: #f0eff5 !important;
+    color: #1a1927 !important;
+}
+#MainMenu, footer, header { visibility: hidden; }
+.block-container { padding: 24px 28px !important; max-width: 1400px; }
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background-color: #14131a !important;
+    border-right: 1px solid rgba(255,255,255,0.06) !important;
+    min-width: 230px !important; max-width: 230px !important;
+}
+section[data-testid="stSidebar"] * { color: #9997b3 !important; font-family: 'Inter', sans-serif !important; }
+section[data-testid="stSidebar"] .stMarkdown h3 {
+    color: #fff !important; font-size: 11px !important; font-weight: 600 !important;
+    text-transform: uppercase !important; letter-spacing: 0.7px !important; margin-bottom: 8px !important;
+}
+section[data-testid="stSidebar"] .stSelectbox > div > div {
+    background-color: #1e1d28 !important; border: 1px solid #252336 !important;
+    color: #fff !important; border-radius: 6px !important; font-size: 12px !important;
+}
+section[data-testid="stSidebar"] .stSelectbox label {
+    color: #5a5878 !important; font-size: 10px !important;
+    font-weight: 600 !important; text-transform: uppercase !important; letter-spacing: 0.7px !important;
+}
+section[data-testid="stSidebar"] .stDateInput input {
+    background-color: #1e1d28 !important; border: 1px solid #252336 !important;
+    color: #fff !important; border-radius: 6px !important; font-size: 12px !important;
+}
+section[data-testid="stSidebar"] .stDateInput label {
+    color: #5a5878 !important; font-size: 10px !important;
+    font-weight: 600 !important; text-transform: uppercase !important; letter-spacing: 0.7px !important;
+}
+section[data-testid="stSidebar"] .stButton > button {
+    background: #7c3aed !important; color: #fff !important; border: none !important;
+    border-radius: 6px !important; font-size: 12px !important; font-weight: 600 !important;
+    width: 100% !important;
+}
+section[data-testid="stSidebar"] .stButton > button:hover { background: #6d28d9 !important; }
+section[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.06) !important; }
+section[data-testid="stSidebar"] .stCaption { color: #5a5878 !important; font-size: 10px !important; }
+section[data-testid="stSidebar"] .stRadio > div { gap: 6px !important; }
+section[data-testid="stSidebar"] .stRadio label { font-size: 12px !important; color: #9997b3 !important; }
+
+/* Page title */
+h1 { font-size: 20px !important; font-weight: 700 !important; letter-spacing: -0.4px !important; color: #1a1927 !important; margin-bottom: 2px !important; }
+h2 { font-size: 14px !important; font-weight: 600 !important; color: #1a1927 !important; margin: 0 !important; }
+h3 { font-size: 12px !important; font-weight: 600 !important; color: #9997b3 !important;
+     text-transform: uppercase !important; letter-spacing: 0.6px !important; margin: 0 0 12px 0 !important; }
+
+/* Cards */
+.card {
+    background: #fff; border: 1px solid #e4e2ee; border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); padding: 16px 18px; margin-bottom: 12px;
+}
+.card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 12px; border-bottom: 1px solid #f0eff5; margin-bottom: 14px;
+}
+
+/* Product badge */
+.product-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 4px;
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+}
+.badge-asa    { background: #f5f3ff; color: #7c3aed; }
+.badge-net    { background: #eff6ff; color: #2563eb; }
+.badge-dsp    { background: #ecfdf5; color: #059669; }
+.badge-pai    { background: #fff7ed; color: #ea580c; }
+.badge-oemd   { background: #faf5ff; color: #9333ea; }
+
+/* Stat cards */
+.stat-grid { display: grid; gap: 10px; margin-bottom: 14px; }
+.stat-card {
+    background: #fff; border: 1px solid #e4e2ee; border-radius: 8px;
+    padding: 12px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    border-top: 3px solid #e4e2ee;
+}
+.stat-card.green  { border-top-color: #059669; }
+.stat-card.purple { border-top-color: #7c3aed; }
+.stat-card.blue   { border-top-color: #2563eb; }
+.stat-card.amber  { border-top-color: #d97706; }
+.stat-card.red    { border-top-color: #dc2626; }
+.stat-card.gray   { border-top-color: #9997b3; }
+
+.stat-label {
+    font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.6px; color: #9997b3; margin-bottom: 4px;
+}
+.stat-value { font-size: 20px; font-weight: 700; letter-spacing: -0.4px; color: #1a1927; }
+.stat-delta { font-size: 11px; margin-top: 3px; }
+.delta-pos  { color: #059669; }
+.delta-neg  { color: #dc2626; }
+.delta-neu  { color: #9997b3; }
+
+/* Section divider */
+.section-divider {
+    font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.7px;
+    color: #9997b3; padding: 6px 0; border-bottom: 1px solid #e4e2ee; margin: 18px 0 14px;
+}
+
+/* Table */
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th {
+    background: #f0eff5; padding: 8px 12px; text-align: left;
+    font-size: 10.5px; font-weight: 600; color: #9997b3;
+    text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e4e2ee;
+    white-space: nowrap;
+}
+td { padding: 8px 12px; border-bottom: 1px solid #f5f3fb; color: #1a1927; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #faf9ff; }
+
+/* Spinner */
+.stSpinner > div { border-top-color: #7c3aed !important; }
+
+/* Alert */
+.stAlert { border-radius: 6px !important; font-size: 12px !important; }
+.stInfo { background: #f5f3ff !important; border-left-color: #7c3aed !important; color: #4c1d95 !important; }
+
+div[data-testid="stAppViewContainer"] { background-color: #f0eff5 !important; }
+</style>
+""", unsafe_allow_html=True)
+
+# ── Constants ──────────────────────────────────────────────────────────────────
+BQ_PROJECT = "prod-data-461409"
+SCOPES = [
+    "https://www.googleapis.com/auth/bigquery",
+    "https://www.googleapis.com/auth/cloud-platform",
+]
+
+PRODUCT_CONFIG = {
+    "ASA": {
+        "badge_class": "badge-asa",
+        "kpis": ["spend_usd", "margin_pct", "delivery_pct", "var_spend", "var_cpc", "var_cpi"],
+    },
+    "NET": {
+        "badge_class": "badge-net",
+        "kpis": ["spend_usd", "margin_pct", "delivery_pct", "var_spend", "var_cpi",
+                 "clicks", "var_clicks", "q_attr", "var_q_attr", "ctatt", "var_ctatt",
+                 "fraud_pct", "var_fraud_pct"],
+    },
+    "DSP": {
+        "badge_class": "badge-dsp",
+        "kpis": ["spend_usd", "margin_pct", "delivery_pct", "var_spend", "var_cpm",
+                 "var_cpc", "var_cpi", "q_attr", "var_q_attr", "fraud_pct", "var_fraud_pct",
+                 "vta_share", "cta_share"],
+    },
+    "PAI": {
+        "badge_class": "badge-pai",
+        "kpis": ["spend_usd", "margin_pct", "delivery_pct", "var_spend", "installs", "var_installs"],
+    },
+    "OEM Disp": {
+        "badge_class": "badge-oemd",
+        "kpis": ["spend_usd", "margin_pct", "delivery_pct", "var_spend", "var_cpc",
+                 "var_cpi", "q_attr", "var_q_attr", "fraud_pct", "var_fraud_pct"],
+    },
+}
+
+KPI_META = {
+    "spend_usd":       {"label": "Spend USD",         "color": "purple", "fmt": "currency"},
+    "margin_pct":      {"label": "Margin %",           "color": "green",  "fmt": "pct"},
+    "delivery_pct":    {"label": "Delivery %",         "color": "blue",   "fmt": "pct"},
+    "var_spend":       {"label": "Δ Spend vs prev",    "color": "gray",   "fmt": "pct_delta"},
+    "var_cpc":         {"label": "Δ CPC vs prev",      "color": "gray",   "fmt": "pct_delta"},
+    "var_cpi":         {"label": "Δ CPI vs prev",      "color": "gray",   "fmt": "pct_delta"},
+    "var_cpm":         {"label": "Δ CPM vs prev",      "color": "gray",   "fmt": "pct_delta"},
+    "clicks":          {"label": "Clicks",             "color": "blue",   "fmt": "number"},
+    "var_clicks":      {"label": "Δ Clicks vs prev",   "color": "gray",   "fmt": "pct_delta"},
+    "q_attr":          {"label": "Q Attr",             "color": "blue",   "fmt": "number"},
+    "var_q_attr":      {"label": "Δ Q Attr vs prev",   "color": "gray",   "fmt": "pct_delta"},
+    "ctatt":           {"label": "CTAtt",              "color": "blue",   "fmt": "number"},
+    "var_ctatt":       {"label": "Δ CTAtt vs prev",    "color": "gray",   "fmt": "pct_delta"},
+    "fraud_pct":       {"label": "% Fraude",           "color": "amber",  "fmt": "pct"},
+    "var_fraud_pct":   {"label": "Δ % Fraude vs prev", "color": "gray",   "fmt": "pct_delta"},
+    "installs":        {"label": "Installs",           "color": "blue",   "fmt": "number"},
+    "var_installs":    {"label": "Δ Installs vs prev", "color": "gray",   "fmt": "pct_delta"},
+    "vta_share":       {"label": "VTA Share",          "color": "blue",   "fmt": "pct"},
+    "cta_share":       {"label": "CTA Share",          "color": "blue",   "fmt": "pct"},
+}
+
+# ── Auth ───────────────────────────────────────────────────────────────────────
+@st.cache_resource
+def get_bq_client():
+    if "gcp_service_account" in st.secrets:
+        creds = Credentials.from_service_account_info(dict(st.secrets["gcp_service_account"]), scopes=SCOPES)
+    else:
+        creds = Credentials.from_service_account_file("service_account.json", scopes=SCOPES)
+    return bigquery.Client(project=BQ_PROJECT, credentials=creds)
+
+# ── Queries ────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=300)
+def fetch_clients():
+    bq = get_bq_client()
+    q = f"""
+        SELECT DISTINCT client_id, client_name
+        FROM `{BQ_PROJECT}.marts.space_events_extra_info`
+        WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
+          AND client_name IS NOT NULL
+        ORDER BY client_name
+    """
+    return bq.query(q).to_dataframe()
+
+@st.cache_data(ttl=300)
+def fetch_health_data(client_id: int, d_start: str, d_end: str, d_prev_start: str, d_prev_end: str):
+    bq = get_bq_client()
+    q = f"""
+    WITH managers AS (
+      SELECT
+        a.id             AS client_id,
+        cs.name          AS cs_manager,
+        ops.name         AS ops_manager
+      FROM `{BQ_PROJECT}.stg.stg_advertisers` a
+      LEFT JOIN `{BQ_PROJECT}.stg.lk_customers_success_managers` cs  ON cs.id  = a.customer_success_manager_id
+      LEFT JOIN `{BQ_PROJECT}.stg.lk_adops_managers`             ops ON ops.id = a.adops_manager_id
+      WHERE a.deleted_at IS NULL
+    ),
+
+    raw AS (
+      SELECT
+        date,
+        agg.client_id,
+        agg.client_name,
+        agg.product,
+        agg.campaign_name,
+        SUM(CASE WHEN event_name = 'clicks'      THEN event_count END)                    AS clicks,
+        SUM(CASE WHEN event_name = 'impressions' THEN event_count END)                    AS impressions,
+        SUM(CASE WHEN event_name = 'install'     THEN event_count END)                    AS installs,
+        SUM(CASE WHEN event_name NOT IN ('install','clicks','impressions') THEN event_count END) AS q_attr,
+        SUM(client_revenue_usd)   AS revenue_usd,
+        SUM(client_spend_usd)     AS spend_usd,
+        SUM(budget_usd)           AS budget_usd,
+        m.ops_manager,
+        m.cs_manager,
+        CASE
+          WHEN date BETWEEN '{d_start}' AND '{d_end}'           THEN 'current'
+          WHEN date BETWEEN '{d_prev_start}' AND '{d_prev_end}' THEN 'prev'
+        END AS period
+      FROM `{BQ_PROJECT}.marts.space_events_extra_info` agg
+      LEFT JOIN managers m ON m.client_id = agg.client_id
+      WHERE agg.client_id = {client_id}
+        AND (
+          date BETWEEN '{d_start}' AND '{d_end}'
+          OR date BETWEEN '{d_prev_start}' AND '{d_prev_end}'
+        )
+      GROUP BY ALL
+    )
+
+    SELECT
+      period,
+      product,
+      campaign_name,
+      ops_manager,
+      cs_manager,
+      SUM(spend_usd)     AS spend_usd,
+      SUM(revenue_usd)   AS revenue_usd,
+      SUM(budget_usd)    AS budget_usd,
+      SUM(clicks)        AS clicks,
+      SUM(impressions)   AS impressions,
+      SUM(installs)      AS installs,
+      SUM(q_attr)        AS q_attr
+    FROM raw
+    WHERE period IS NOT NULL
+    GROUP BY ALL
+    """
+    return bq.query(q).to_dataframe()
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+def fmt_value(val, fmt):
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return "—"
+    if fmt == "currency":
+        return f"${val:,.0f}"
+    if fmt == "pct":
+        return f"{val:.1f}%"
+    if fmt == "pct_delta":
+        sign = "+" if val > 0 else ""
+        return f"{sign}{val:.1f}%"
+    if fmt == "number":
+        return f"{val:,.0f}"
+    return str(val)
+
+def delta_class(val, fmt, invert=False):
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return "delta-neu"
+    if fmt not in ("pct_delta",):
+        return "delta-neu"
+    positive_is_good = not invert
+    if val > 0:
+        return "delta-pos" if positive_is_good else "delta-neg"
+    if val < 0:
+        return "delta-neg" if positive_is_good else "delta-pos"
+    return "delta-neu"
+
+def pct_change(curr, prev):
+    if prev and prev != 0:
+        return (curr - prev) / abs(prev) * 100
+    return None
+
+def compute_kpis(curr_df, prev_df, product):
+    def s(df, col):
+        return df[col].sum() if col in df.columns and not df.empty else 0
+
+    c_spend    = s(curr_df, "spend_usd")
+    p_spend    = s(prev_df, "spend_usd")
+    c_rev      = s(curr_df, "revenue_usd")
+    c_budget   = s(curr_df, "budget_usd")
+    c_clicks   = s(curr_df, "clicks")
+    p_clicks   = s(prev_df, "clicks")
+    c_impr     = s(curr_df, "impressions")
+    c_inst     = s(curr_df, "installs")
+    p_inst     = s(prev_df, "installs")
+    c_qattr    = s(curr_df, "q_attr")
+    p_qattr    = s(prev_df, "q_attr")
+
+    margin     = (c_rev - c_spend) / c_rev * 100 if c_rev else None
+    delivery   = c_spend / c_budget * 100 if c_budget else None
+    cpc_curr   = c_spend / c_clicks  if c_clicks  else None
+    cpc_prev   = p_spend / p_clicks  if p_clicks  else None
+    cpi_curr   = c_spend / c_inst    if c_inst    else None
+    cpi_prev   = p_spend / p_inst    if p_inst    else None
+    cpm_curr   = c_spend / c_impr * 1000 if c_impr else None
+    cpm_prev   = s(prev_df, "spend_usd") / s(prev_df, "impressions") * 1000 if s(prev_df, "impressions") else None
+    ctatt_curr = c_qattr / c_clicks  if c_clicks  else None
+    ctatt_prev = p_qattr / p_clicks  if p_clicks  else None
+    vta        = None  # placeholder
+    cta        = None  # placeholder
+
+    return {
+        "spend_usd":     c_spend,
+        "margin_pct":    margin,
+        "delivery_pct":  delivery,
+        "var_spend":     pct_change(c_spend, p_spend),
+        "var_cpc":       pct_change(cpc_curr, cpc_prev),
+        "var_cpi":       pct_change(cpi_curr, cpi_prev),
+        "var_cpm":       pct_change(cpm_curr, cpm_prev),
+        "clicks":        c_clicks,
+        "var_clicks":    pct_change(c_clicks, p_clicks),
+        "q_attr":        c_qattr,
+        "var_q_attr":    pct_change(c_qattr, p_qattr),
+        "ctatt":         ctatt_curr * 100 if ctatt_curr else None,
+        "var_ctatt":     pct_change(ctatt_curr, ctatt_prev),
+        "fraud_pct":     None,
+        "var_fraud_pct": None,
+        "installs":      c_inst,
+        "var_installs":  pct_change(c_inst, p_inst),
+        "vta_share":     vta,
+        "cta_share":     cta,
+    }
+
+def render_product_block(product, curr_df, prev_df):
+    cfg    = PRODUCT_CONFIG.get(product, {})
+    badge  = cfg.get("badge_class", "badge-asa")
+    kpis   = cfg.get("kpis", [])
+    values = compute_kpis(curr_df, prev_df, product)
+
+    n_campaigns = curr_df["campaign_name"].nunique() if not curr_df.empty else 0
+
+    header_html = f"""
+    <div class="card-header">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="product-badge {badge}">{product}</span>
+        <span style="font-size:12px;color:#6b6887">{n_campaigns} campaign{'s' if n_campaigns != 1 else ''}</span>
+      </div>
+    </div>
+    """
+
+    # Stat cards
+    cols_per_row = min(len(kpis), 7)
+    stat_html = f'<div class="stat-grid" style="grid-template-columns: repeat({cols_per_row}, 1fr)">'
+    for k in kpis:
+        meta  = KPI_META.get(k, {"label": k, "color": "gray", "fmt": "number"})
+        val   = values.get(k)
+        invert = k in ("var_cpc", "var_cpi", "var_cpm", "fraud_pct", "var_fraud_pct")
+        color = meta["color"]
+        # Override color for delta based on direction
+        if meta["fmt"] == "pct_delta" and val is not None:
+            good_up = k not in ("var_cpc", "var_cpi", "var_cpm", "var_fraud_pct")
+            if val > 0:
+                color = "green" if good_up else "red"
+            elif val < 0:
+                color = "red" if good_up else "green"
+            else:
+                color = "gray"
+
+        stat_html += f"""
+        <div class="stat-card {color}">
+          <div class="stat-label">{meta['label']}</div>
+          <div class="stat-value">{fmt_value(val, meta['fmt'])}</div>
+        </div>"""
+    stat_html += "</div>"
+
+    # Campaign table
+    if not curr_df.empty:
+        tbl_rows = ""
+        for _, row in curr_df.groupby("campaign_name")[["spend_usd","clicks","installs","q_attr","budget_usd"]].sum().reset_index().iterrows():
+            deliv = f"{row['spend_usd']/row['budget_usd']*100:.1f}%" if row["budget_usd"] else "—"
+            tbl_rows += f"""<tr>
+              <td>{row['campaign_name']}</td>
+              <td>${row['spend_usd']:,.0f}</td>
+              <td>{deliv}</td>
+              <td>{int(row['clicks']) if pd.notna(row['clicks']) else '—'}</td>
+              <td>{int(row['installs']) if pd.notna(row['installs']) else '—'}</td>
+              <td>{int(row['q_attr']) if pd.notna(row['q_attr']) else '—'}</td>
+            </tr>"""
+
+        table_html = f"""
+        <div class="section-divider">By Campaign</div>
+        <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>Campaign</th><th>Spend USD</th><th>Delivery %</th>
+            <th>Clicks</th><th>Installs</th><th>Q Attr</th>
+          </tr></thead>
+          <tbody>{tbl_rows}</tbody>
+        </table>
+        </div>"""
+    else:
+        table_html = ""
+
+    st.markdown(f'<div class="card">{header_html}{stat_html}{table_html}</div>', unsafe_allow_html=True)
+
+# ── Period helpers ─────────────────────────────────────────────────────────────
+def get_preset_range(preset: str):
+    today = date.today()
+    if preset == "This month":
+        start = today.replace(day=1)
+        end   = today
+    elif preset == "Last month":
+        first = today.replace(day=1)
+        end   = first - timedelta(days=1)
+        start = end.replace(day=1)
+    elif preset == "Last 7 days":
+        start = today - timedelta(days=6)
+        end   = today
+    elif preset == "Last 30 days":
+        start = today - timedelta(days=29)
+        end   = today
+    else:
+        start = today.replace(day=1)
+        end   = today
+    return start, end
+
+def get_prev_range(start: date, end: date):
+    delta = (end - start).days + 1
+    prev_end   = start - timedelta(days=1)
+    prev_start = prev_end - timedelta(days=delta - 1)
+    return prev_start, prev_end
+
+# ── Sidebar ────────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("""
+    <div style="padding:4px 0 16px;border-bottom:1px solid rgba(255,255,255,0.06);margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="width:26px;height:26px;background:#7c3aed;border-radius:5px;
+                    display:flex;align-items:center;justify-content:center;
+                    font-size:11px;font-weight:600;color:#fff">RL</div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:#fff !important">Rocket Lab</div>
+          <div style="font-size:10px;color:#5a5878 !important">Space: Health Check</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Client
+    st.markdown("### Client")
+    clients_df = pd.DataFrame()
+    try:
+        with st.spinner(""):
+            clients_df = fetch_clients()
+    except Exception as e:
+        st.error(f"BQ error: {e}")
+
+    client_options = {"— select —": None}
+    if not clients_df.empty:
+        client_options.update({r["client_name"]: r["client_id"] for _, r in clients_df.iterrows()})
+
+    selected_name = st.selectbox("Client", options=list(client_options.keys()), label_visibility="collapsed")
+    selected_id   = client_options[selected_name]
+
+    st.markdown("<hr style='border-color:rgba(255,255,255,0.06);margin:14px 0'>", unsafe_allow_html=True)
+
+    # Time frame
+    st.markdown("### Time frame")
+    preset = st.radio(
+        "preset",
+        ["This month", "Last month", "Last 7 days", "Last 30 days", "Custom"],
+        label_visibility="collapsed",
+    )
+
+    if preset == "Custom":
+        d_start = st.date_input("From", value=date.today().replace(day=1))
+        d_end   = st.date_input("To",   value=date.today())
+    else:
+        d_start, d_end = get_preset_range(preset)
+        st.caption(f"{d_start.strftime('%b %d')} → {d_end.strftime('%b %d, %Y')}")
+
+    d_prev_start, d_prev_end = get_prev_range(d_start, d_end)
+    st.caption(f"vs {d_prev_start.strftime('%b %d')} → {d_prev_end.strftime('%b %d, %Y')}")
+
+    st.markdown("<hr style='border-color:rgba(255,255,255,0.06);margin:14px 0'>", unsafe_allow_html=True)
+
+    run = st.button("Run", use_container_width=True)
+
+# ── Main ───────────────────────────────────────────────────────────────────────
+st.title("Space: Health Check")
+st.caption(f"Client performance overview · {d_start.strftime('%b %d')} – {d_end.strftime('%b %d, %Y')} vs prior period")
+
+if selected_id is None:
+    st.markdown("""
+    <div style="background:#fff;border:1px solid #e4e2ee;border-radius:8px;
+                padding:40px;text-align:center;margin-top:20px">
+      <div style="font-size:28px;margin-bottom:8px">📊</div>
+      <div style="font-size:14px;font-weight:600;color:#1a1927">Select a client to start</div>
+      <div style="font-size:12px;color:#9997b3;margin-top:4px">
+        Choose a client from the sidebar and click Run.
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
+
+if not run and "last_df" not in st.session_state:
+    st.info("Select filters and click **Run** to load data.")
+    st.stop()
+
+if run:
+    with st.spinner("Querying BigQuery..."):
+        try:
+            df = fetch_health_data(
+                selected_id,
+                str(d_start), str(d_end),
+                str(d_prev_start), str(d_prev_end),
+            )
+            st.session_state["last_df"]   = df
+            st.session_state["last_range"] = (d_start, d_end, d_prev_start, d_prev_end)
+        except Exception as e:
+            st.error(f"Query error: {e}")
+            st.stop()
+
+df   = st.session_state["last_df"]
+curr = df[df["period"] == "current"]
+prev = df[df["period"] == "prev"]
+
+if curr.empty:
+    st.warning("No data found for this client in the selected period.")
+    st.stop()
+
+# ── Manager info strip ─────────────────────────────────────────────────────────
+ops = curr["ops_manager"].dropna().iloc[0] if not curr["ops_manager"].dropna().empty else "—"
+cs  = curr["cs_manager"].dropna().iloc[0]  if not curr["cs_manager"].dropna().empty  else "—"
+
+st.markdown(f"""
+<div style="display:flex;gap:10px;margin-bottom:18px">
+  <div style="background:#fff;border:1px solid #e4e2ee;border-radius:6px;padding:8px 14px;font-size:12px">
+    <span style="color:#9997b3;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px">Ops Manager</span><br>
+    <span style="font-weight:500">{ops}</span>
+  </div>
+  <div style="background:#fff;border:1px solid #e4e2ee;border-radius:6px;padding:8px 14px;font-size:12px">
+    <span style="color:#9997b3;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px">CS Manager</span><br>
+    <span style="font-weight:500">{cs}</span>
+  </div>
+  <div style="background:#fff;border:1px solid #e4e2ee;border-radius:6px;padding:8px 14px;font-size:12px">
+    <span style="color:#9997b3;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px">Period</span><br>
+    <span style="font-weight:500">{d_start.strftime('%b %d')} – {d_end.strftime('%b %d, %Y')}</span>
+  </div>
+  <div style="background:#fff;border:1px solid #e4e2ee;border-radius:6px;padding:8px 14px;font-size:12px">
+    <span style="color:#9997b3;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px">Compare to</span><br>
+    <span style="font-weight:500">{d_prev_start.strftime('%b %d')} – {d_prev_end.strftime('%b %d, %Y')}</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ── Products ───────────────────────────────────────────────────────────────────
+products_in_data = curr["product"].dropna().unique().tolist()
+ordered_products = [p for p in PRODUCT_CONFIG if p in products_in_data]
+# Include any product in data not in our config
+ordered_products += [p for p in products_in_data if p not in PRODUCT_CONFIG]
+
+if not ordered_products:
+    st.warning("No product data found for this client.")
+    st.stop()
+
+for product in ordered_products:
+    curr_p = curr[curr["product"] == product]
+    prev_p = prev[prev["product"] == product]
+    render_product_block(product, curr_p, prev_p)
