@@ -233,11 +233,21 @@ def get_bq_client():
 def fetch_clients():
     bq = get_bq_client()
     q = f"""
-        SELECT DISTINCT client_id, client_name
-        FROM `{BQ_PROJECT}.marts.space_events_extra_info`
-        WHERE date >= TIMESTAMP(DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY))
-          AND client_name IS NOT NULL
-        ORDER BY client_name
+        SELECT
+          e.client_id,
+          e.client_name,
+          cs.name  AS cs_manager,
+          ops.name AS ops_manager
+        FROM (
+          SELECT DISTINCT client_id, client_name
+          FROM `{BQ_PROJECT}.marts.space_events_extra_info`
+          WHERE date >= TIMESTAMP(DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY))
+            AND client_name IS NOT NULL
+        ) e
+        LEFT JOIN `{BQ_PROJECT}.stg.stg_advertisers` a   ON a.id = e.client_id AND a.deleted_at IS NULL
+        LEFT JOIN `{BQ_PROJECT}.stg.lk_customers_success_managers` cs  ON cs.id  = a.customer_success_manager_id
+        LEFT JOIN `{BQ_PROJECT}.stg.lk_adops_managers`             ops ON ops.id = a.adops_manager_id
+        ORDER BY e.client_name
     """
     return bq.query(q).to_dataframe()
 
