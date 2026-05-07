@@ -350,9 +350,12 @@ def pct_change(curr, prev):
 def compute_kpis(curr_df, prev_df, product, d_start, d_end):
     def s(df, col):
         if col not in df.columns or df.empty:
-            return 0
-        val = df[col].sum()
-        return 0 if pd.isna(val) else val
+            return 0.0
+        try:
+            val = df[col].sum()
+            return 0.0 if pd.isna(val) else float(val)
+        except Exception:
+            return 0.0
 
     n_days = max((d_end - d_start).days + 1, 1)
 
@@ -494,19 +497,30 @@ def render_product_block(product, curr_df, prev_df, d_start, d_end):
             sign = "+" if v > 0 else ""
             return f"{sign}{v:.1f}%"
 
+        def _safe_float(val):
+            try:
+                if val is None or (hasattr(val, "__class__") and type(val).__name__ == "NAType"):
+                    return 0.0
+                import pandas as _pd
+                if _pd.isna(val):
+                    return 0.0
+                return float(val)
+            except Exception:
+                return 0.0
+
         def tbl_val(row, k):
-            sp   = float(row.get("spend_usd") or 0)
-            bud  = float(row.get("budget_pr_usd") or 0)
-            cl   = float(row.get("clicks") or 0)
-            ins  = float(row.get("installs") or 0)
-            qa   = float(row.get("q_attr") or 0)
-            rv   = float(row.get("revenue_usd") or 0)
-            sp_p = float(row.get("spend_usd_prev") or 0)
-            cl_p = float(row.get("clicks_prev") or 0)
-            ins_p= float(row.get("installs_prev") or 0)
-            qa_p = float(row.get("q_attr_prev") or 0)
-            imp  = float(row.get("impressions") or 0)
-            imp_p= float(row.get("impressions_prev") or 0)
+            sp   = _safe_float(row.get("spend_usd"))
+            bud  = _safe_float(row.get("budget_pr_usd"))
+            cl   = _safe_float(row.get("clicks"))
+            ins  = _safe_float(row.get("installs"))
+            qa   = _safe_float(row.get("q_attr"))
+            rv   = _safe_float(row.get("revenue_usd"))
+            sp_p = _safe_float(row.get("spend_usd_prev"))
+            cl_p = _safe_float(row.get("clicks_prev"))
+            ins_p= _safe_float(row.get("installs_prev"))
+            qa_p = _safe_float(row.get("q_attr_prev"))
+            imp  = _safe_float(row.get("impressions"))
+            imp_p= _safe_float(row.get("impressions_prev"))
 
             cpc      = safe_tbl_div(sp,   cl)
             cpc_p    = safe_tbl_div(sp_p, cl_p)
