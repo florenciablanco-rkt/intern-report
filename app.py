@@ -620,18 +620,32 @@ if not clients_df.empty:
     client_options.update({r["client_name"]: r["client_id"] for _, r in clients_df.iterrows()})
 
 # ── Filter bar (dark background)
-st.markdown('''<style>
-div[data-testid="stHorizontalBlock"] > div > div > div > div[data-baseweb="select"] > div {
+
+
+# Inject CSS to style the filter columns block as a dark card
+st.markdown("""
+<style>
+[data-testid="stHorizontalBlock"]:first-of-type {
+    background: #14131a;
+    border-radius: 10px;
+    padding: 14px 20px;
+    margin-bottom: 8px;
+}
+[data-testid="stHorizontalBlock"]:first-of-type label,
+[data-testid="stHorizontalBlock"]:first-of-type p {
+    color: #5a5878 !important;
+}
+[data-testid="stHorizontalBlock"]:first-of-type [data-baseweb="select"] > div {
     background-color: #1e1d28 !important;
     border-color: #252336 !important;
-    color: #fff !important;
 }
-div[data-testid="stHorizontalBlock"] > div > div > div > div[data-baseweb="select"] span {
-    color: #fff !important;
+[data-testid="stHorizontalBlock"]:first-of-type [data-baseweb="select"] span,
+[data-testid="stHorizontalBlock"]:first-of-type [data-baseweb="select"] div {
+    color: #ffffff !important;
 }
-</style>''', unsafe_allow_html=True)
-
-st.markdown('<div style="background:#14131a;border-radius:10px;padding:16px 20px;margin-bottom:20px">', unsafe_allow_html=True)
+[data-testid="stHorizontalBlock"]:first-of-type svg { fill: #9997b3 !important; }
+</style>
+""", unsafe_allow_html=True)
 
 f1, f2, f3, f4, f5, f6 = st.columns([2, 1.4, 1.4, 1.2, 1.4, 0.7])
 
@@ -678,7 +692,7 @@ with f6:
     st.markdown('<p style="font-size:10px;margin:0 0 4px">&nbsp;</p>', unsafe_allow_html=True)
     run = st.button("Run", type="primary", use_container_width=True)
 
-st.markdown('</div>', unsafe_allow_html=True)
+
 
 d_prev_start, d_prev_end = get_prev_range(d_start, d_end)
 
